@@ -40,37 +40,35 @@ func waitReadyExpectProc(exproc *expect.ExpectProcess, readyStrs []string) error
 }
 
 func spawnWithExpect(args []string, expected string) error {
-	return spawnWithExpects(args, []string{expected}...)
+	return spawnWithExpects(args, nil, []string{expected}...)
 }
 
-func spawnWithExpects(args []string, xs ...string) error {
-	_, err := spawnWithExpectLines(args, xs...)
+func spawnWithExpectWithEnv(args []string, envVars map[string]string, expected string) error {
+	return spawnWithExpects(args, envVars, []string{expected}...)
+}
+
+func spawnWithExpects(args []string, envVars map[string]string, xs ...string) error {
+	_, err := spawnWithExpectLines(args, envVars, xs...)
 	return err
 }
 
-func spawnWithExpectLines(args []string, xs ...string) ([]string, error) {
-	proc, err := spawnCmd(args)
+func spawnWithExpectLines(args []string, envVars map[string]string, xs ...string) ([]string, error) {
+	proc, err := spawnCmd(args, envVars)
 	if err != nil {
 		return nil, err
 	}
 	// process until either stdout or stderr contains
 	// the expected string
 	var (
-		lines    []string
-		lineFunc = func(txt string) bool { return true }
+		lines []string
 	)
 	for _, txt := range xs {
-		for {
-			l, lerr := proc.ExpectFunc(lineFunc)
-			if lerr != nil {
-				proc.Close()
-				return nil, fmt.Errorf("%v %v (expected %q, got %q). Try EXPECT_DEBUG=TRUE", args, lerr, txt, lines)
-			}
-			lines = append(lines, l)
-			if strings.Contains(l, txt) {
-				break
-			}
+		l, lerr := proc.Expect(txt)
+		if lerr != nil {
+			proc.Close()
+			return nil, fmt.Errorf("%v %v (expected %q, got %q). Try EXPECT_DEBUG=TRUE", args, lerr, txt, lines)
 		}
+		lines = append(lines, l)
 	}
 	perr := proc.Close()
 	l := proc.LineCount()
