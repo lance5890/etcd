@@ -144,6 +144,7 @@ type etcdProcessClusterConfig struct {
 	execPath    string
 	dataDirPath string
 	keepDataDir bool
+	envVars     map[string]string
 
 	clusterSize int
 
@@ -174,6 +175,7 @@ type etcdProcessClusterConfig struct {
 	v2deprecation       string
 
 	rollingStart bool
+	logLevel     string
 }
 
 // newEtcdProcessCluster launches a new cluster from etcd processes, returning
@@ -314,10 +316,15 @@ func (cfg *etcdProcessClusterConfig) etcdServerProcessConfigs(tb testing.TB) []*
 			args = append(args, "--v2-deprecation", cfg.v2deprecation)
 		}
 
+		if cfg.logLevel != "" {
+			args = append(args, "--log-level", cfg.logLevel)
+		}
+
 		etcdCfgs[i] = &etcdServerProcessConfig{
 			lg:           lg,
 			execPath:     cfg.execPath,
 			args:         args,
+			envVars:      cfg.envVars,
 			tlsArgs:      cfg.tlsArgs(),
 			dataDirPath:  dataDirPath,
 			keepDataDir:  cfg.keepDataDir,

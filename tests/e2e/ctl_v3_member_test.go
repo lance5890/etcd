@@ -95,13 +95,13 @@ func ctlV3MemberList(cx ctlCtx) error {
 	for i := range lines {
 		lines[i] = "started"
 	}
-	return spawnWithExpects(cmdArgs, lines...)
+	return spawnWithExpects(cmdArgs, cx.envMap, lines...)
 }
 
 func getMemberList(cx ctlCtx) (etcdserverpb.MemberListResponse, error) {
 	cmdArgs := append(cx.PrefixArgs(), "--write-out", "json", "member", "list")
 
-	proc, err := spawnCmd(cmdArgs)
+	proc, err := spawnCmd(cmdArgs, cx.envMap)
 	if err != nil {
 		return etcdserverpb.MemberListResponse{}, err
 	}
@@ -130,7 +130,7 @@ func memberListWithHexTest(cx ctlCtx) {
 
 	cmdArgs := append(cx.PrefixArgs(), "--write-out", "json", "--hex", "member", "list")
 
-	proc, err := spawnCmd(cmdArgs)
+	proc, err := spawnCmd(cmdArgs, cx.envMap)
 	if err != nil {
 		cx.t.Fatalf("memberListWithHexTest error (%v)", err)
 	}
@@ -155,15 +155,20 @@ func memberListWithHexTest(cx ctlCtx) {
 	if num == 0 {
 		cx.t.Fatal("member number is 0")
 	}
+
+	if resp.Header.RaftTerm != hexResp.Header.RaftTerm {
+		cx.t.Fatalf("Unexpected raft_term, expected %d, got %d", resp.Header.RaftTerm, hexResp.Header.RaftTerm)
+	}
+
 	for i := 0; i < num; i++ {
 		if resp.Members[i].Name != hexResp.Members[i].Name {
-			cx.t.Fatalf("member name,expected %v,got %v", resp.Members[i].Name, hexResp.Members[i].Name)
+			cx.t.Fatalf("Unexpected member name,expected %v, got %v", resp.Members[i].Name, hexResp.Members[i].Name)
 		}
 		if !reflect.DeepEqual(resp.Members[i].PeerURLs, hexResp.Members[i].PeerURLs) {
-			cx.t.Fatalf("member peerURLs,expected %v,got %v", resp.Members[i].PeerURLs, hexResp.Members[i].PeerURLs)
+			cx.t.Fatalf("Unexpected member peerURLs, expected %v, got %v", resp.Members[i].PeerURLs, hexResp.Members[i].PeerURLs)
 		}
 		if !reflect.DeepEqual(resp.Members[i].ClientURLs, hexResp.Members[i].ClientURLs) {
-			cx.t.Fatalf("member clientURLS,expected %v,got %v", resp.Members[i].ClientURLs, hexResp.Members[i].ClientURLs)
+			cx.t.Fatalf("Unexpected member clientURLS, expected %v, got %v", resp.Members[i].ClientURLs, hexResp.Members[i].ClientURLs)
 		}
 	}
 }
@@ -177,7 +182,7 @@ func memberRemoveTest(cx ctlCtx) {
 
 func ctlV3MemberRemove(cx ctlCtx, ep, memberID, clusterID string) error {
 	cmdArgs := append(cx.prefixArgs([]string{ep}), "member", "remove", memberID)
-	return spawnWithExpect(cmdArgs, fmt.Sprintf("%s removed from cluster %s", memberID, clusterID))
+	return spawnWithExpectWithEnv(cmdArgs, cx.envMap, fmt.Sprintf("%s removed from cluster %s", memberID, clusterID))
 }
 
 func memberAddTest(cx ctlCtx) {
@@ -197,7 +202,7 @@ func ctlV3MemberAdd(cx ctlCtx, peerURL string, isLearner bool) error {
 	if isLearner {
 		cmdArgs = append(cmdArgs, "--learner")
 	}
-	return spawnWithExpect(cmdArgs, " added to cluster ")
+	return spawnWithExpectWithEnv(cmdArgs, cx.envMap, " added to cluster ")
 }
 
 func memberUpdateTest(cx ctlCtx) {
@@ -215,5 +220,5 @@ func memberUpdateTest(cx ctlCtx) {
 
 func ctlV3MemberUpdate(cx ctlCtx, memberID, peerURL string) error {
 	cmdArgs := append(cx.PrefixArgs(), "member", "update", memberID, fmt.Sprintf("--peer-urls=%s", peerURL))
-	return spawnWithExpect(cmdArgs, " updated in cluster ")
+	return spawnWithExpectWithEnv(cmdArgs, cx.envMap, " updated in cluster ")
 }
