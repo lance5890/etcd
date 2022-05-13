@@ -1,9 +1,14 @@
 approvers:
-- hexfusion
+- deads2k
+- hasbro17
+- dusk125
 reviewers:
 - deads2k
-- crawford
-- hexfusion
+- dusk125
+- hasbro17
 - smarterclayton
 - wking
+- EmilyM1
+- Elbehery
+- tjungblu
 component: "Etcd"
