@@ -216,7 +216,7 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 		go func() {
 			mux := http.NewServeMux()
 			grpcproxy.HandleMetrics(mux, httpClient, client.Endpoints())
-			grpcproxy.HandleHealth(mux, client)
+			grpcproxy.HandleHealth(lg, mux, client)
 			lg.Info("gRPC proxy server metrics URL serving")
 			herr := http.Serve(mhttpl, mux)
 			if herr != nil {
@@ -311,7 +311,7 @@ func newTLS(ca, cert, key string) *transport.TLSInfo {
 	if ca == "" && cert == "" && key == "" {
 		return nil
 	}
-	return &transport.TLSInfo{TrustedCAFile: ca, CertFile: cert, KeyFile: key, EmptyCN: true}
+	return &transport.TLSInfo{TrustedCAFile: ca, CertFile: cert, KeyFile: key}
 }
 
 func mustListenCMux(lg *zap.Logger, tlsinfo *transport.TLSInfo) cmux.CMux {
@@ -396,7 +396,7 @@ func mustHTTPListener(lg *zap.Logger, m cmux.CMux, tlsinfo *transport.TLSInfo, c
 	httpmux := http.NewServeMux()
 	httpmux.HandleFunc("/", http.NotFound)
 	grpcproxy.HandleMetrics(httpmux, httpClient, c.Endpoints())
-	grpcproxy.HandleHealth(httpmux, c)
+	grpcproxy.HandleHealth(lg, httpmux, c)
 	if grpcProxyEnablePprof {
 		for p, h := range debugutil.PProfHandlers() {
 			httpmux.Handle(p, h)

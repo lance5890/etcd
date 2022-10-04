@@ -20,12 +20,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
+
 	"go.etcd.io/etcd/etcdserver"
 	"go.etcd.io/etcd/etcdserver/etcdserverpb"
 	"go.etcd.io/etcd/raft"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
@@ -34,9 +35,9 @@ const (
 )
 
 // HandleMetricsHealth registers metrics and health handlers.
-func HandleMetricsHealth(mux *http.ServeMux, srv etcdserver.ServerV2) {
+func HandleMetricsHealth(lg *zap.Logger, mux *http.ServeMux, srv etcdserver.ServerV2) {
 	mux.Handle(PathMetrics, promhttp.Handler())
-	mux.Handle(PathHealth, NewHealthHandler(func(excludedAlarms AlarmSet) Health { return checkHealth(srv, excludedAlarms) }))
+	mux.Handle(PathHealth, NewHealthHandler(lg, func(excludedAlarms AlarmSet) Health { return checkHealth(lg, srv, excludedAlarms) }))
 }
 
 // HandlePrometheus registers prometheus handler on '/metrics'.
@@ -45,12 +46,12 @@ func HandlePrometheus(mux *http.ServeMux) {
 }
 
 // NewHealthHandler handles '/health' requests.
-func NewHealthHandler(hfunc func(excludedAlarms AlarmSet) Health) http.HandlerFunc {
+func NewHealthHandler(lg *zap.Logger, hfunc func(excludedAlarms AlarmSet) Health) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
-			plog.Warningf("/health error (status code %d)", http.StatusMethodNotAllowed)
+			lg.Warn("/health error", zap.Int("status-code", http.StatusMethodNotAllowed))
 			return
 		}
 		excludedAlarms := getExcludedAlarms(r)
@@ -58,10 +59,12 @@ func NewHealthHandler(hfunc func(excludedAlarms AlarmSet) Health) http.HandlerFu
 		d, _ := json.Marshal(h)
 		if h.Health != "true" {
 			http.Error(w, string(d), http.StatusServiceUnavailable)
+			lg.Warn("/health error", zap.String("output", string(d)), zap.Int("status-code", http.StatusServiceUnavailable))
 			return
 		}
 		w.WriteHeader(http.StatusOK)
 		w.Write(d)
+		lg.Debug("/health OK", zap.Int("status-code", http.StatusOK))
 	}
 }
 
@@ -109,7 +112,7 @@ func getExcludedAlarms(r *http.Request) (alarms AlarmSet) {
 
 // TODO: server NOSPACE, etcdserver.ErrNoLeader in health API
 
-func checkHealth(srv etcdserver.ServerV2, excludedAlarms AlarmSet) Health {
+func checkHealth(lg *zap.Logger, srv etcdserver.ServerV2, excludedAlarms AlarmSet) Health {
 	h := Health{Health: "true"}
 
 	as := srv.Alarms()
@@ -117,11 +120,11 @@ func checkHealth(srv etcdserver.ServerV2, excludedAlarms AlarmSet) Health {
 		for _, v := range as {
 			alarmName := v.Alarm.String()
 			if _, found := excludedAlarms[alarmName]; found {
-				plog.Debugf("/health excluded alarm %s", v.String())
+				lg.Debug("/health excluded alarm %s", zap.String("alarm", v.String()))
 				continue
 			}
 			h.Health = "false"
-			plog.Warningf("/health error due to %s", v.String())
+			lg.Warn("/health error due to %s", zap.String("error", v.String()))
 			return h
 		}
 	}
@@ -129,7 +132,7 @@ func checkHealth(srv etcdserver.ServerV2, excludedAlarms AlarmSet) Health {
 	if h.Health == "true" {
 		if uint64(srv.Leader()) == raft.None {
 			h.Health = "false"
-			plog.Warningf("/health error; no leader (status code %d)", http.StatusServiceUnavailable)
+			lg.Warn("serving /health false; no leader")
 		}
 	}
 
@@ -139,13 +142,13 @@ func checkHealth(srv etcdserver.ServerV2, excludedAlarms AlarmSet) Health {
 		cancel()
 		if err != nil {
 			h.Health = "false"
-			plog.Warningf("/health error; QGET failed %v (status code %d)", err, http.StatusServiceUnavailable)
+			lg.Warn("serving /health false; QGET fails", zap.Error(err))
 		}
 	}
 
 	if h.Health == "true" {
 		healthSuccess.Inc()
-		plog.Debugf("/health OK (status code %d)", http.StatusOK)
+		lg.Debug("serving /health true")
 	} else {
 		healthFailed.Inc()
 	}
