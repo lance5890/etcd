@@ -77,6 +77,8 @@ Member:
     Maximum number of operations permitted in a transaction.
   --max-request-bytes '1572864'
     Maximum client request size in bytes the server will accept.
+  --max-concurrent-streams 'math.MaxUint32'
+    Maximum concurrent streams that each client can open at a time.
   --grpc-keepalive-min-time '5s'
     Minimum duration interval that a client should wait before pinging server.
   --grpc-keepalive-interval '2h'
@@ -220,6 +222,8 @@ Experimental feature:
     Skip verification of SAN field in client certificate for peer connections.
   --experimental-watch-progress-notify-interval '10m'
     Duration of periodical watch progress notification.
+  --experimental-warning-apply-duration '100ms'
+    Warning is generated if requests take more than this duration.
 
 Unsafe feature:
   --force-new-cluster 'false'

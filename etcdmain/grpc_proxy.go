@@ -45,6 +45,7 @@ import (
 	"github.com/soheilhy/cmux"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 )
@@ -86,6 +87,8 @@ var (
 	grpcProxyEnableOrdering bool
 
 	grpcProxyDebug bool
+
+	maxConcurrentStreams uint32
 )
 
 const defaultGRPCMaxCallSendMsgSize = 1.5 * 1024 * 1024
@@ -146,6 +149,8 @@ func newGRPCProxyStartCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&grpcProxyDebug, "debug", false, "Enable debug-level logging for grpc-proxy.")
 
+	cmd.Flags().Uint32Var(&maxConcurrentStreams, "max-concurrent-streams", math.MaxUint32, "Maximum concurrent streams that each client can open at a time.")
+
 	return &cmd
 }
 
@@ -195,6 +200,13 @@ func startGRPCProxy(cmd *cobra.Command, args []string) {
 	httpClient := mustNewHTTPClient(lg)
 
 	srvhttp, httpl := mustHTTPListener(lg, m, tlsinfo, client)
+
+	if err := http2.ConfigureServer(srvhttp, &http2.Server{
+		MaxConcurrentStreams: maxConcurrentStreams,
+	}); err != nil {
+		lg.Fatal("Failed to configure the http server", zap.Error(err))
+	}
+
 	errc := make(chan error)
 	go func() { errc <- newGRPCProxyServer(lg, client).Serve(grpcl) }()
 	go func() { errc <- srvhttp.Serve(httpl) }()
@@ -326,7 +338,7 @@ func mustListenCMux(lg *zap.Logger, tlsinfo *transport.TLSInfo) cmux.CMux {
 
 func newGRPCProxyServer(lg *zap.Logger, client *clientv3.Client) *grpc.Server {
 	if grpcProxyEnableOrdering {
-		vf := ordering.NewOrderViolationSwitchEndpointClosure(*client)
+		vf := ordering.NewOrderViolationSwitchEndpointClosure(client)
 		client.KV = ordering.NewKV(client.KV, vf)
 		lg.Info("waiting for linearized read from cluster to recover ordering")
 		for {
@@ -350,12 +362,12 @@ func newGRPCProxyServer(lg *zap.Logger, client *clientv3.Client) *grpc.Server {
 	}
 
 	kvp, _ := grpcproxy.NewKvProxy(client)
-	watchp, _ := grpcproxy.NewWatchProxy(client)
+	watchp, _ := grpcproxy.NewWatchProxy(client.Ctx(), client)
 	if grpcProxyResolverPrefix != "" {
 		grpcproxy.Register(client, grpcProxyResolverPrefix, grpcProxyAdvertiseClientURL, grpcProxyResolverTTL)
 	}
 	clusterp, _ := grpcproxy.NewClusterProxy(client, grpcProxyAdvertiseClientURL, grpcProxyResolverPrefix)
-	leasep, _ := grpcproxy.NewLeaseProxy(client)
+	leasep, _ := grpcproxy.NewLeaseProxy(client.Ctx(), client)
 	mainp := grpcproxy.NewMaintenanceProxy(client)
 	authp := grpcproxy.NewAuthProxy(client)
 	electionp := grpcproxy.NewElectionProxy(client)

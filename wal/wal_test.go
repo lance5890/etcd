@@ -239,7 +239,7 @@ func TestVerify(t *testing.T) {
 
 	// make 5 separate files
 	for i := 0; i < 5; i++ {
-		es := []raftpb.Entry{{Index: uint64(i), Data: []byte("waldata" + string(i+1))}}
+		es := []raftpb.Entry{{Index: uint64(i), Data: []byte("waldata" + string(rune(i+1)))}}
 		if err = w.Save(raftpb.HardState{}, es); err != nil {
 			t.Fatal(err)
 		}
@@ -652,24 +652,31 @@ func TestOpenWithMaxIndex(t *testing.T) {
 	}
 	defer os.RemoveAll(p)
 	// create WAL
-	w, err := Create(zap.NewExample(), p, nil)
+	w1, err := Create(zap.NewExample(), p, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer w.Close()
+	defer func() {
+		if w1 != nil {
+			w1.Close()
+		}
+	}()
 
 	es := []raftpb.Entry{{Index: uint64(math.MaxInt64)}}
-	if err = w.Save(raftpb.HardState{}, es); err != nil {
+	if err = w1.Save(raftpb.HardState{}, es); err != nil {
 		t.Fatal(err)
 	}
-	w.Close()
+	w1.Close()
+	w1 = nil
 
-	w, err = Open(zap.NewExample(), p, walpb.Snapshot{})
+	w2, err := Open(zap.NewExample(), p, walpb.Snapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err = w.ReadAll()
-	if err == nil || err != ErrSliceOutOfRange {
+	defer w2.Close()
+
+	_, _, _, err = w2.ReadAll()
+	if err != ErrSliceOutOfRange {
 		t.Fatalf("err = %v, want ErrSliceOutOfRange", err)
 	}
 }

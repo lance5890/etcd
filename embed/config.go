@@ -18,6 +18,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -53,7 +54,9 @@ const (
 	DefaultMaxSnapshots          = 5
 	DefaultMaxWALs               = 5
 	DefaultMaxTxnOps             = uint(128)
+	DefaultWarningApplyDuration  = 100 * time.Millisecond
 	DefaultMaxRequestBytes       = 1.5 * 1024 * 1024
+	DefaultMaxConcurrentStreams  = math.MaxUint32
 	DefaultGRPCKeepAliveMinTime  = 5 * time.Second
 	DefaultGRPCKeepAliveInterval = 2 * time.Hour
 	DefaultGRPCKeepAliveTimeout  = 20 * time.Second
@@ -186,6 +189,10 @@ type Config struct {
 	MaxTxnOps         uint  `json:"max-txn-ops"`
 	MaxRequestBytes   uint  `json:"max-request-bytes"`
 
+	// MaxConcurrentStreams specifies the maximum number of concurrent
+	// streams that each client can open at a time.
+	MaxConcurrentStreams uint32 `json:"max-concurrent-streams"`
+
 	LPUrls, LCUrls []url.URL
 	APUrls, ACUrls []url.URL
 	ClientTLSInfo  transport.TLSInfo
@@ -286,7 +293,7 @@ type Config struct {
 	AuthToken  string `json:"auth-token"`
 	BcryptCost uint   `json:"bcrypt-cost"`
 
-	//The AuthTokenTTL in seconds of the simple token
+	// AuthTokenTTL specifies the TTL in seconds of the simple token
 	AuthTokenTTL uint `json:"auth-token-ttl"`
 
 	ExperimentalInitialCorruptCheck bool          `json:"experimental-initial-corrupt-check"`
@@ -294,10 +301,18 @@ type Config struct {
 	ExperimentalEnableV2V3          string        `json:"experimental-enable-v2v3"`
 	// ExperimentalBackendFreelistType specifies the type of freelist that boltdb backend uses (array and map are supported types).
 	ExperimentalBackendFreelistType string `json:"experimental-backend-bbolt-freelist-type"`
-	// ExperimentalEnableLeaseCheckpoint enables primary lessor to persist lease remainingTTL to prevent indefinite auto-renewal of long lived leases.
-	ExperimentalEnableLeaseCheckpoint       bool          `json:"experimental-enable-lease-checkpoint"`
-	ExperimentalCompactionBatchLimit        int           `json:"experimental-compaction-batch-limit"`
-	ExperimentalWatchProgressNotifyInterval time.Duration `json:"experimental-watch-progress-notify-interval"`
+	// ExperimentalEnableLeaseCheckpoint enables leader to send regular checkpoints to other members to prevent reset of remaining TTL on leader change.
+	ExperimentalEnableLeaseCheckpoint bool `json:"experimental-enable-lease-checkpoint"`
+	// ExperimentalEnableLeaseCheckpointPersist enables persisting remainingTTL to prevent indefinite auto-renewal of long lived leases. Always enabled in v3.6. Should be used to ensure smooth upgrade from v3.5 clusters with this feature enabled.
+	// Requires experimental-enable-lease-checkpoint to be enabled.
+	// Deprecated in v3.6.
+	// TODO: Delete in v3.7
+	ExperimentalEnableLeaseCheckpointPersist bool          `json:"experimental-enable-lease-checkpoint-persist"`
+	ExperimentalCompactionBatchLimit         int           `json:"experimental-compaction-batch-limit"`
+	ExperimentalWatchProgressNotifyInterval  time.Duration `json:"experimental-watch-progress-notify-interval"`
+	// ExperimentalWarningApplyDuration is the time duration after which a warning is generated if applying request
+	// takes more time than this value.
+	ExperimentalWarningApplyDuration time.Duration `json:"experimental-warning-apply-duration"`
 
 	// ForceNewCluster starts a new cluster even if previously started; unsafe.
 	ForceNewCluster bool `json:"force-new-cluster"`
@@ -404,8 +419,10 @@ func NewConfig() *Config {
 		SnapshotCount:          etcdserver.DefaultSnapshotCount,
 		SnapshotCatchUpEntries: etcdserver.DefaultSnapshotCatchUpEntries,
 
-		MaxTxnOps:       DefaultMaxTxnOps,
-		MaxRequestBytes: DefaultMaxRequestBytes,
+		MaxTxnOps:                        DefaultMaxTxnOps,
+		MaxRequestBytes:                  DefaultMaxRequestBytes,
+		MaxConcurrentStreams:             DefaultMaxConcurrentStreams,
+		ExperimentalWarningApplyDuration: DefaultWarningApplyDuration,
 
 		GRPCKeepAliveMinTime:  DefaultGRPCKeepAliveMinTime,
 		GRPCKeepAliveInterval: DefaultGRPCKeepAliveInterval,
@@ -643,6 +660,14 @@ func (cfg *Config) Validate() error {
 	case CompactorModeRevision, CompactorModePeriodic:
 	default:
 		return fmt.Errorf("unknown auto-compaction-mode %q", cfg.AutoCompactionMode)
+	}
+
+	if !cfg.ExperimentalEnableLeaseCheckpointPersist && cfg.ExperimentalEnableLeaseCheckpoint {
+		cfg.logger.Warn("Detected that checkpointing is enabled without persistence. Consider enabling experimental-enable-lease-checkpoint-persist")
+	}
+
+	if cfg.ExperimentalEnableLeaseCheckpointPersist && !cfg.ExperimentalEnableLeaseCheckpoint {
+		return fmt.Errorf("setting experimental-enable-lease-checkpoint-persist requires experimental-enable-lease-checkpoint")
 	}
 
 	return nil

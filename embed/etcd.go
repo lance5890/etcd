@@ -113,14 +113,6 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		e = nil
 	}()
 
-	if cfg.logger != nil && !cfg.SocketOpts.Empty() {
-		cfg.logger.Info(
-			"configuring socket options",
-			zap.Bool("reuse-address", cfg.SocketOpts.ReuseAddress),
-			zap.Bool("reuse-port", cfg.SocketOpts.ReusePort),
-		)
-	}
-
 	if e.cfg.logger != nil {
 		e.cfg.logger.Info(
 			"configuring peer listeners",
@@ -197,6 +189,7 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		MaxTxnOps:                   cfg.MaxTxnOps,
 		MaxRequestBytes:             cfg.MaxRequestBytes,
 		SocketOpts:                  cfg.SocketOpts,
+		MaxConcurrentStreams:        cfg.MaxConcurrentStreams,
 		StrictReconfigCheck:         cfg.StrictReconfigCheck,
 		ClientCertAuthEnabled:       cfg.ClientTLSInfo.ClientCertAuth,
 		AuthToken:                   cfg.AuthToken,
@@ -216,8 +209,10 @@ func StartEtcd(inCfg *Config) (e *Etcd, err error) {
 		EnableGRPCGateway:           cfg.EnableGRPCGateway,
 		UnsafeNoFsync:               cfg.UnsafeNoFsync,
 		EnableLeaseCheckpoint:       cfg.ExperimentalEnableLeaseCheckpoint,
+		LeaseCheckpointPersist:      cfg.ExperimentalEnableLeaseCheckpointPersist,
 		CompactionBatchLimit:        cfg.ExperimentalCompactionBatchLimit,
 		WatchProgressNotifyInterval: cfg.ExperimentalWatchProgressNotifyInterval,
+		WarningApplyDuration:        cfg.ExperimentalWarningApplyDuration,
 	}
 	print(e.cfg.logger, *cfg, srvcfg, memberInitialized)
 	if e.Server, err = etcdserver.NewServer(srvcfg); err != nil {
@@ -339,7 +334,10 @@ func print(lg *zap.Logger, ec Config, sc etcdserver.ServerConfig, memberInitiali
 			zap.String("initial-cluster", sc.InitialPeerURLsMap.String()),
 			zap.String("initial-cluster-state", ec.ClusterState),
 			zap.String("initial-cluster-token", sc.InitialClusterToken),
-			zap.Int64("quota-size-bytes", quota),
+			zap.Int64("quota-backend-bytes", quota),
+			zap.Uint("max-request-bytes", sc.MaxRequestBytes),
+			zap.Uint32("max-concurrent-streams", sc.MaxConcurrentStreams),
+
 			zap.Bool("pre-vote", sc.PreVote),
 			zap.Bool("initial-corrupt-check", sc.InitialCorruptCheck),
 			zap.String("corrupt-check-time-interval", sc.CorruptCheckTime.String()),
