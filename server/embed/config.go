@@ -17,6 +17,7 @@ package embed
 import (
 	"crypto/tls"
 	"fmt"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/membership"
 	"io/ioutil"
 	"math"
 	"net"
@@ -343,6 +344,8 @@ type Config struct {
 	// ExperimentalBootstrapDefragThresholdMegabytes is the minimum number of megabytes needed to be freed for etcd server to
 	// consider running defrag during bootstrap. Needs to be set to non-zero value to take effect.
 	ExperimentalBootstrapDefragThresholdMegabytes uint `json:"experimental-bootstrap-defrag-threshold-megabytes"`
+	// ExperimentalMaxLearners sets a limit to the number of learner members that can exist in the cluster membership.
+	ExperimentalMaxLearners int `json:"experimental-max-learners"`
 
 	// ForceNewCluster starts a new cluster even if previously started; unsafe.
 	ForceNewCluster bool `json:"force-new-cluster"`
@@ -515,6 +518,7 @@ func NewConfig() *Config {
 		ExperimentalDowngradeCheckTime:           DefaultDowngradeCheckTime,
 		ExperimentalMemoryMlock:                  false,
 		ExperimentalTxnModeWriteWithSharedBuffer: true,
+		ExperimentalMaxLearners:                  membership.DefaultMaxLearners,
 
 		ExperimentalCompactHashCheckEnabled: false,
 		ExperimentalCompactHashCheckTime:    time.Minute,
